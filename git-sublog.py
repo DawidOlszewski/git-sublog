@@ -11,6 +11,8 @@ from  enum import StrEnum
 import io
 import sys
 
+COMMIT_SHORT=8
+
 class Mode(StrEnum):
     Submodule = "160000"
     Commit= "commit??:P"
@@ -141,9 +143,9 @@ def print_changes(f,t, color="green", git=git):
                 fst = False
             else:
                 pass
-            cprint(hline["sha"][:9] ,hline["msg"], color=color)
+            cprint(hline["sha"][:COMMIT_SHORT] ,hline["msg"], color=color)
         if hline["type"] == Mode.Submodule.name:
-            cprint(hline["path"], f"{hline["f"][:9]} -> {hline["t"][:9]}")
+            cprint(hline["path"], f"{hline["f"][:COMMIT_SHORT]} -> {hline["t"][:COMMIT_SHORT]}")
     return commit_amount
 
 sublog(git=git)
