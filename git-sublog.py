@@ -19,17 +19,34 @@ class Mode(StrEnum):
 
 executed_git_cmds = []
 
-def cprint(*args, color="white", **kwargs):
+def cprint(*args, fg_color="white", bg_color="black", **kwargs):
     colors = {
-        "red": "\033[31m",
-        "green": "\033[32m",
-        "yellow": "\033[33m",
-        "blue": "\033[34m",
-        "reset": "\033[0m"
+        "black":   0,
+        "red":     1,
+        "green":   2,
+        "yellow":  3,
+        "blue":    4,
+        "magenta": 5,
+        "cyan":    6,
+        "white":   7,
     }
-    print(colors.get(color, ""), end="")
+
+    start = ""
+    try:
+        start += f"\033[{30 + colors[fg_color]}m"
+    except:
+        raise Exception("bad fg color")
+    
+    try:
+        start += f"\033[{40 + colors[bg_color]}m"
+    except:
+        raise Exception("bad bg color")
+    
+    reset = "\033[0m"
+
+    print(start, end="")
     print(*args, **kwargs)
-    print(colors.get("reset", ""), end="")
+    print(reset, end="")
 
 def git_factory(path="."):
     def git(*args):
@@ -91,7 +108,7 @@ def sublog(git=git):
             first_module = False
         else:
             print()
-        cprint(remote_repo_name(git).center(65,"-"),color="yellow")
+        cprint(remote_repo_name(git).center(65,"-"),fg_color="yellow")
         print(buffer.getvalue(), end="")
         for submod in submodules(git):
             path,_ = submod
@@ -149,7 +166,7 @@ def print_changes(f,t, color="green", git=git, color_subrefs=False):
                 fst = False
             else:
                 pass
-            cprint(hline["sha"][:COMMIT_SHORT] ,hline["msg"], color=color)
+            cprint(hline["sha"][:COMMIT_SHORT] ,hline["msg"], fg_color=color)
         if hline["type"] == Mode.Submodule.name:
             sub_f_sha = hline['f'][:COMMIT_SHORT]
             sub_t_sha = hline['t'][:COMMIT_SHORT]
@@ -158,10 +175,10 @@ def print_changes(f,t, color="green", git=git, color_subrefs=False):
             else:
                 cprint(hline["path"], end=" ")
                 sub_f_color = "green" if is_ancestor(sub_f_sha, "HEAD", git_C(hline["path"],git)) else "red"
-                cprint(sub_f_sha, color=sub_f_color, end="")
+                cprint(sub_f_sha, fg_color=sub_f_color, end="")
                 print(" -> ",end="")
                 sub_t_color = "green" if is_ancestor(sub_t_sha, "HEAD", git_C(hline["path"],git)) else "red"
-                cprint(sub_t_sha, color=sub_t_color)
+                cprint(sub_t_sha, fg_color=sub_t_color)
     return commit_amount
 
 def rev_parse(module_ref, git=git):
