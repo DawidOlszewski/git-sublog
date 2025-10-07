@@ -75,6 +75,7 @@ def submodule_down_top(func, git=git, lvl=0):
     func(git,lvl)
 
 def sublog(git=git):
+    git_fetch(git)
     first_module = True
     buffer = io.StringIO()
     sys.stdout = buffer
