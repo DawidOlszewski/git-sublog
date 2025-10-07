@@ -119,10 +119,10 @@ def raw_line(line: str):
         msg = m.group(2)
         return {"type": Mode.Commit.name, "sha": sha, "msg": msg}
 
-def print_changes_bothsides(f,t , git=git):
+def print_changes_bothsides(f,t , git=git, color_subrefs=False):
     commit_amount = 0
-    commit_amount += print_changes(f,t, color="green",git=git)
-    commit_amount += print_changes(t, f, color="red",git=git)
+    commit_amount += print_changes(f,t, color="green",git=git,color_subrefs=color_subrefs)
+    commit_amount += print_changes(t, f, color="red",git=git, color_subrefs=color_subrefs)
     return commit_amount
 
 # its the main reason of delay
@@ -135,9 +135,9 @@ def main_branch(git=git):
 
 
 def print_curr_changes(git=git):
-    return print_changes_bothsides("origin/"+ main_branch(git=git),"HEAD", git=git)
+    return print_changes_bothsides("origin/"+ main_branch(git=git),"HEAD", git=git, color_subrefs=True)
 
-def print_changes(f,t, color="green", git=git):
+def print_changes(f,t, color="green", git=git, color_subrefs=False):
     fst = True
     res = git("log", f"{f}..{t}", "--raw", "--pretty=oneline")
     commit_amount = 0
@@ -151,7 +151,17 @@ def print_changes(f,t, color="green", git=git):
                 pass
             cprint(hline["sha"][:COMMIT_SHORT] ,hline["msg"], color=color)
         if hline["type"] == Mode.Submodule.name:
-            cprint(hline["path"], f"{hline['f'][:COMMIT_SHORT]} -> {hline['t'][:COMMIT_SHORT]}")
+            sub_f_sha = hline['f'][:COMMIT_SHORT]
+            sub_t_sha = hline['t'][:COMMIT_SHORT]
+            if not color_subrefs:
+                cprint(hline["path"], f"{sub_f_sha} -> {sub_t_sha}")
+            else:
+                cprint(hline["path"], end=" ")
+                sub_f_color = "green" if is_ancestor(sub_f_sha, "HEAD", git_C(hline["path"],git)) else "red"
+                cprint(sub_f_sha, color=sub_f_color, end="")
+                print(" -> ",end="")
+                sub_t_color = "green" if is_ancestor(sub_t_sha, "HEAD", git_C(hline["path"],git)) else "red"
+                cprint(sub_t_sha, color=sub_t_color)
     return commit_amount
 
 def rev_parse(module_ref, git=git):
