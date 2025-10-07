@@ -174,10 +174,10 @@ def print_changes(f,t, color="green", git=git, color_subrefs=False):
                 cprint(hline["path"], f"{sub_f_sha} -> {sub_t_sha}")
             else:
                 cprint(hline["path"], end=" ")
-                sub_f_color = "green" if is_ancestor(sub_f_sha, "HEAD", git_C(hline["path"],git)) else "red"
+                sub_f_color = "cyan" if is_ancestor(sub_f_sha, "HEAD", git_C(hline["path"],git)) else "magenta"
                 cprint(sub_f_sha, fg_color=sub_f_color, end="")
                 print(" -> ",end="")
-                sub_t_color = "green" if is_ancestor(sub_t_sha, "HEAD", git_C(hline["path"],git)) else "red"
+                sub_t_color = "cyan" if is_ancestor(sub_t_sha, "HEAD", git_C(hline["path"],git)) else "magenta"
                 cprint(sub_t_sha, fg_color=sub_t_color)
     return commit_amount
 
