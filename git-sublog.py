@@ -152,13 +152,18 @@ def print_changes(f,t, color="green", git=git):
 def rev_parse(module_ref, git=git):
     return git("rev-parse", module_ref).strip()
 
+# currently the only correct way of using this is by being in root dir of git
 def subchange(module_path, module_ref, git=git):
     module_full_sha = rev_parse(module_ref, git_C(module_path, git=git))
     git("update-index", "--cacheinfo",  f"{Mode.Submodule.value},{module_full_sha},{module_path}")
 
+def subsha(module_path, git=git):
+    return git("ls-tree","HEAD", module_path).split("\t")[-2].split(" ")[-1]
+
 cmd_dict = {
     "sublog": lambda : sublog(git=git),
-    "subchange": lambda module_path, module_sha: subchange(module_path, module_sha, git=git)
+    "subchange": lambda module_path, module_ref: subchange(module_path, module_ref, git=git),
+    "subsha": lambda module_path: print(subsha(module_path, git=git))
 }
 
 def usage():
