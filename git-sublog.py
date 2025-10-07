@@ -4,7 +4,7 @@
 
 # print all submodules with changes
 
-from subprocess import run
+from subprocess import run, DEVNULL
 import os
 import re
 from  enum import StrEnum
@@ -167,6 +167,14 @@ def subsha(module_path, git=git):
 
 def submsg(module_path, git=git):
     return  git_C(module_path,git=git)("log", subsha(module_path, git), "-1", "--pretty=%s").strip()
+
+def is_ancestor(child_ref, parent_ref, git=git):
+    executed_cmd = ["git", "-C", git.path, "merge-base", "--is-ancestor", child_ref, parent_ref]
+    executed_git_cmds.append(executed_cmd)
+    p = run(executed_cmd, stdout=DEVNULL,stdin=DEVNULL)
+    if p.returncode == 128:
+        raise Exception("bad ref")
+    return not int(p.returncode)
 
 cmd_dict = {
     "sublog": lambda : sublog(git=git),
