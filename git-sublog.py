@@ -146,7 +146,7 @@ def print_changes(f,t, color="green", git=git):
                 pass
             cprint(hline["sha"][:COMMIT_SHORT] ,hline["msg"], color=color)
         if hline["type"] == Mode.Submodule.name:
-            cprint(hline["path"], f"{hline["f"][:COMMIT_SHORT]} -> {hline["t"][:COMMIT_SHORT]}")
+            cprint(hline["path"], f"{hline['f'][:COMMIT_SHORT]} -> {hline['t'][:COMMIT_SHORT]}")
     return commit_amount
 
 sublog(git=git)
