@@ -149,4 +149,30 @@ def print_changes(f,t, color="green", git=git):
             cprint(hline["path"], f"{hline['f'][:COMMIT_SHORT]} -> {hline['t'][:COMMIT_SHORT]}")
     return commit_amount
 
-sublog(git=git)
+def rev_parse(module_ref, git=git):
+    return git("rev-parse", module_ref).strip()
+
+def subchange(module_path, module_ref, git=git):
+    module_full_sha = rev_parse(module_ref, git_C(module_path, git=git))
+    git("update-index", "--cacheinfo",  f"{Mode.Submodule.value},{module_full_sha},{module_path}")
+
+cmd_dict = {
+    "sublog": lambda : sublog(git=git),
+    "subchange": lambda module_path, module_sha: subchange(module_path, module_sha, git=git)
+}
+
+def usage():
+    raise Exception("Usage: git", f"({'|'.join(cmd_dict.keys())})", sys.argv)
+
+
+if __name__ == "__main__":
+    match = re.match(r".*-(.*)", sys.argv[0])
+    if not match:
+        usage()
+
+    cmd_name = match.group(1)
+    try:
+        cmd = cmd_dict[cmd_name]
+        cmd(*sys.argv[1:])
+    except:
+        usage()
