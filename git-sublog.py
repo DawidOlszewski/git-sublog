@@ -160,10 +160,14 @@ def subchange(module_path, module_ref, git=git):
 def subsha(module_path, git=git):
     return git("ls-tree","HEAD", module_path).split("\t")[-2].split(" ")[-1]
 
+def submsg(module_path, git=git):
+    return  git_C(module_path,git=git)("log", subsha(module_path, git), "-1", "--pretty=%s").strip()
+
 cmd_dict = {
     "sublog": lambda : sublog(git=git),
     "subchange": lambda module_path, module_ref: subchange(module_path, module_ref, git=git),
-    "subsha": lambda module_path: print(subsha(module_path, git=git))
+    "subsha": lambda module_path: print(subsha(module_path, git=git)),
+    "submsg": lambda module_path: print(submsg(module_path, git=git))
 }
 
 def usage():
