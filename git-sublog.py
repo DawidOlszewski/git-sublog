@@ -31,16 +31,21 @@ def cprint(*args, color="white", **kwargs):
     print(*args, **kwargs)
     print(colors.get("reset", ""), end="")
 
-def git(*args):
-    arr = ["git", *args]
-    executed_git_cmds.append(arr)
-    p = run(arr,capture_output=True, text=True)
-    if p.returncode != 0:
-        raise Exception("return code != 0")
-    return p.stdout
+def git_factory(path="."):
+    def git(*args):
+        arr = ["git", "-C", git.path, *args]
+        executed_git_cmds.append(arr)
+        p = run(arr,capture_output=True, text=True)
+        if p.returncode != 0:
+            raise Exception("return code != 0")
+        return p.stdout
+    git.path = path
+    return git
 
+git = git_factory()
+    
 def git_C(path, git=git):
-    return lambda *cmd_arr: git("-C", path, *cmd_arr)
+    return git_factory(git.path + "/" + path)
 
 def curr_branch(git=git):
     b = git("branch", "--show-current").strip()
@@ -71,7 +76,7 @@ def submodule_down_top(func, git=git, lvl=0):
     print(remote_repo(git))
     for submod in submodules(git):
         path,_ = submod
-        submodule_down_top(func, git=lambda *cmd_arr: git("-C", path, *cmd_arr), lvl=lvl+1)
+        submodule_down_top(func, git=git_C(path,git=git), lvl=lvl+1)
     func(git,lvl)
 
 def sublog(git=git):
@@ -90,7 +95,7 @@ def sublog(git=git):
         print(buffer.getvalue(), end="")
         for submod in submodules(git):
             path,_ = submod
-            sublog(git=lambda *cmd_arr: git("-C", path, *cmd_arr))
+            sublog(git=git_C(path, git=git))
 
 def raw_line(line: str):
     if line.startswith(":"):
