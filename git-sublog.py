@@ -15,6 +15,7 @@ COMMIT_SHORT=8
 
 class Mode(StrEnum):
     Submodule = "160000"
+    File = "100000"
     Commit= "commit??:P"
 
 executed_git_cmds = []
@@ -92,7 +93,6 @@ def submodules(git=git):
     return submods
     
 def submodule_down_top(func, git=git, lvl=0):
-    print(remote_repo(git))
     for submod in submodules(git):
         path,_ = submod
         submodule_down_top(func, git=git_C(path,git=git), lvl=lvl+1)
@@ -116,9 +116,17 @@ def sublog(git=git):
             path,_ = submod
             sublog(git=git_C(path, git=git))
 
+def subfiles(git=git):
+    files = set()
+    def callback(git,lvl):
+        nonlocal files 
+        files = files.union(get_files("origin/" + main_branch(git), "HEAD", git))
+    submodule_down_top(callback, git=git)
+    print(*files, sep="\n")
+
 def raw_line(line: str):
     if line.startswith(":"):
-        m = re.match(r"^:(\w+) (\w+) (\w+) (\w+) (.)\t(.+)$", line)
+        m = re.match(r"^:(\w+) (\w+) (\w+) (\w+) (.)\t(.+)\t?(.*)$", line)
         if m is None:
             raise Exception(f"'{line}' does not match pattern")
         mode_old = m.group(1)
@@ -127,6 +135,12 @@ def raw_line(line: str):
         sha1_new = m.group(4)
         status =  m.group(5)
         path = m.group(6)
+        new_path = m.group(7) # only in C(opy) and R(aname)
+        if mode_new in ["100" + f"{i}{j}{k}" for i in range(8) for j in range(8) for k in range(8)]:
+            if status[:1] in ["A", "M"]:
+                return { "type": Mode.File.name, "path": path }
+            if status[:1] in ["R", "C"]:
+                return { "type": Mode.File.name, "path": new_path }
         if status == "M" and mode_new == Mode.Submodule.value:
             return {"type": Mode.Submodule.name, "f": sha1_old, "t": sha1_new, "path": path}
         return {"type": "unknown"}
@@ -155,6 +169,15 @@ def main_branch(git=git):
 
 def print_curr_changes(git=git):
     return print_changes_bothsides("origin/"+ main_branch(git=git),"HEAD", git=git, color_subrefs=True)
+
+def get_files(f, t, git=git):
+    res = git("log", f"{f}..{t}", "--raw", "--pretty=oneline")
+    files = set()
+    for line in res.split("\n")[:-1]:
+        hline = raw_line(line)
+        if hline["type"] == Mode.File.name:
+            files.add(git.path + "/" + hline["path"])
+    return files
 
 def print_changes(f,t, color="green", git=git, color_subrefs=False):
     fst = True
@@ -211,7 +234,8 @@ cmd_dict = {
     "sublog": lambda : sublog(git=git),
     "subchange": lambda module_path, module_ref: subchange(module_path, module_ref, git=git),
     "subsha": lambda module_path: print(subsha(module_path, git=git)),
-    "submsg": lambda module_path: print(submsg(module_path, git=git))
+    "submsg": lambda module_path: print(submsg(module_path, git=git)),
+    "subfiles": lambda : subfiles(git=git)
 }
 
 def usage():
