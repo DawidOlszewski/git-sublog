@@ -19,7 +19,7 @@ class Mode(StrEnum):
 
 executed_git_cmds = []
 
-def cprint(*args, fg_color="white", bg_color="black", **kwargs):
+def cprint(*args, fg_color="default", bg_color="default", **kwargs):
     colors = {
         "black":   0,
         "red":     1,
@@ -32,15 +32,17 @@ def cprint(*args, fg_color="white", bg_color="black", **kwargs):
     }
 
     start = ""
-    try:
-        start += f"\033[{30 + colors[fg_color]}m"
-    except:
-        raise Exception("bad fg color")
+    if fg_color != "default":
+        try:
+            start += f"\033[{30 + colors[fg_color]}m"
+        except:
+            raise Exception("bad fg color")
     
-    try:
-        start += f"\033[{40 + colors[bg_color]}m"
-    except:
-        raise Exception("bad bg color")
+    if bg_color != "default":
+        try:
+            start += f"\033[{40 + colors[bg_color]}m"
+        except:
+            raise Exception("bad bg color")
     
     reset = "\033[0m"
 
