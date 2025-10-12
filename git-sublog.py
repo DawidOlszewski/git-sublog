@@ -115,16 +115,27 @@ def sublog(git=git):
             futures_fetch.add(ex.submit(_git_fetch,git.path))
         submodule_down_top(add_future_fetch, git=git)
 
+    # submit main branch
+    futures_main_branch = set()
+    with ProcessPoolExecutor() as ex:
+        def add_future_main_branch(git, lvl):
+            nonlocal futures_main_branch
+            fut = ex.submit(_main_branch,git.path)
+            futures_main_branch.add(fut)
+        submodule_down_top(add_future_main_branch, git=git)
+
     # wait for completion of all submissions
     # 'wait' is not an alternative, because it doesn't throw errors 
     for fut in as_completed(futures_fetch):
         _ = fut.result()
     
+    main_branches = dict(fut.result() for fut in as_completed(futures_main_branch))
+
     # recursive log
     def _sublog(git=git):
         buffer = io.StringIO()
         sys.stdout = buffer
-        diff_size = print_changes_bothsides("origin/"+ main_branch(git),"HEAD", git=git, color_subrefs=True)
+        diff_size = print_changes_bothsides("origin/"+ main_branches[git.path],"HEAD", git=git, color_subrefs=True)
         sys.stdout = sys.__stdout__
         if diff_size > 0:
             cprint(remote_repo_name(git=git).center(65,"-"),fg_color="yellow")
