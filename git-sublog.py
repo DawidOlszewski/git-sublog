@@ -126,7 +126,7 @@ def subfiles(git=git):
 
 def raw_line(line: str):
     if line.startswith(":"):
-        m = re.match(r"^:(\w+) (\w+) (\w+) (\w+) (.)\t(.+)\t?(.*)$", line)
+        m = re.match(r"^:(\w+) (\w+) (\w+) (\w+) (.{1,4})\t(.+)\t?(.*)$", line)
         if m is None:
             raise Exception(f"'{line}' does not match pattern")
         mode_old = m.group(1)
