@@ -11,6 +11,8 @@ from  enum import StrEnum
 import io
 import sys
 
+from  concurrent.futures import ALL_COMPLETED, ProcessPoolExecutor, as_completed 
+
 COMMIT_SHORT=8
 
 class Mode(StrEnum):
@@ -98,23 +100,39 @@ def submodule_down_top(func, git=git, lvl=0):
         submodule_down_top(func, git=git_C(path,git=git), lvl=lvl+1)
     func(git,lvl)
 
+def _git_fetch(git_path):
+    git_fetch(git_factory(git_path))
+
+def _main_branch(git_path):
+    return [git_path, main_branch(git=git_factory(git_path))]
+
 def sublog(git=git):
-    git_fetch(git)
-    first_module = True
-    buffer = io.StringIO()
-    sys.stdout = buffer
-    diff_size = print_curr_changes(git)
-    sys.stdout = sys.__stdout__
-    if diff_size > 0:
-        if first_module:
-            first_module = False
-        else:
-            print()
-        cprint(remote_repo_name(git).center(65,"-"),fg_color="yellow")
-        print(buffer.getvalue(), end="")
-        for submod in submodules(git):
-            path,_ = submod
-            sublog(git=git_C(path, git=git))
+    # submit fetch
+    futures_fetch = set()
+    with ProcessPoolExecutor() as ex:
+        def add_future_fetch(git, lvl):
+            nonlocal futures_fetch
+            futures_fetch.add(ex.submit(_git_fetch,git.path))
+        submodule_down_top(add_future_fetch, git=git)
+
+    # wait for completion of all submissions
+    # 'wait' is not an alternative, because it doesn't throw errors 
+    for fut in as_completed(futures_fetch):
+        _ = fut.result()
+    
+    # recursive log
+    def _sublog(git=git):
+        buffer = io.StringIO()
+        sys.stdout = buffer
+        diff_size = print_changes_bothsides("origin/"+ main_branch(git),"HEAD", git=git, color_subrefs=True)
+        sys.stdout = sys.__stdout__
+        if diff_size > 0:
+            cprint(remote_repo_name(git=git).center(65,"-"),fg_color="yellow")
+            print(buffer.getvalue(), end="")
+            for submod in submodules(git):
+                path,_ = submod
+                _sublog(git=git_C(path, git=git))
+    _sublog(git=git)
 
 def subfiles(git=git):
     files = set()
