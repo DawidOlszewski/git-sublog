@@ -161,10 +161,12 @@ def print_changes_bothsides(f,t , git=git, color_subrefs=False):
 # its the main reason of delay
 def main_branch(git=git):
     # Below approach doesn't always work
-    # r = git("symbolic-ref", "refs/remotes/origin/HEAD") # refs/remotes/origin/(master|main)
-    # return r.split("/")[-1][:-1]
-    r = git("ls-remote","--symref","origin","HEAD")
-    return r.split("\n")[0].split("/")[-1].split("\t")[0]
+    try:
+        r = git("symbolic-ref", "refs/remotes/origin/HEAD") # refs/remotes/origin/(master|main)
+        return r.split("/")[-1][:-1]
+    except:
+        r = git("ls-remote","--symref","origin","HEAD")
+        return r.split("\n")[0].split("/")[-1].split("\t")[0]
 
 
 def print_curr_changes(git=git):
