@@ -1,9 +1,5 @@
 #!/usr/bin/python3
 
-# input: number of commits in the main repo
-
-# print all submodules with changes
-
 from subprocess import run, DEVNULL
 import os
 import re
