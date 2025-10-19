@@ -50,11 +50,14 @@ def cprint(*args, fg_color="default", bg_color="default", **kwargs):
     print(reset, end="")
 
 def git_factory(path="."):
-    def git(*args):
+    def git(*args, env=None, allow_fail=False):
         arr = ["git", "-C", git.path, *args]
         executed_git_cmds.append(arr)
-        p = run(arr,capture_output=True, text=True)
-        if p.returncode != 0:
+        environ = os.environ.copy()
+        if env:
+            environ.update(env)
+        p = run(arr,capture_output=True, text=True, env=environ)
+        if p.returncode != 0 and not allow_fail:
             raise Exception("return code != 0")
         return p.stdout
     git.path = path
@@ -107,6 +110,74 @@ def _git_fetch(git_path):
 
 def _main_branch(git_path):
     return [git_path, main_branch(git=git_factory(git_path))]
+
+def get_commit_by_msg(msg, descendant, git=git):
+    res = git("log", descendant,  f"--grep=^{msg}$", '--pretty=%H')
+    return res.split('\n')[0]
+
+def subupdate(module_path, starting_cmt, git=git):
+    # def update(git=git):
+    #     git("rebase", "-i", f"HEAD~{beg}")
+    #     while 
+    def in_rebase(git):
+        res:str=git("status")
+        if res.startswith("interactive"):
+            return True
+        return False
+
+    def _subupdate(module_path, fst):
+        if fst:
+            # normal edit
+            sha = subsha(module_path, git)
+            cmt_msg = git_C(module_path,git=git)("log", "-1", "--pretty=%s", sha)[:-1]
+            new_cmt = get_commit_by_msg(cmt_msg, "HEAD", git_C(module_path,git))
+            if new_cmt is None: new_cmt=sha and print(f"couldn't find commit with msg {cmt_msg} in tree",file=sys.stderr)
+            subchange(module_path, new_cmt, git)
+            git("commit", "--amend", "--no-edit")
+
+        else:
+            #conflict
+            sha = subtheirs(module_path, git)
+            cmt_msg = git_C(module_path,git=git)("log", "-1", "--pretty=%s", sha)[:-1]
+            new_cmt = get_commit_by_msg(cmt_msg, "HEAD", git_C(module_path,git))
+            if new_cmt is None: new_cmt=sha and print(f"couldn't find commit with msg {cmt_msg} in tree",file=sys.stderr)
+            subchange(module_path, new_cmt, git)
+        git("rebase", "--continue", allow_fail=True,env={"GIT_EDITOR": "env true"})
+    
+    helper_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../set2edit.py")
+    tmp=git("rebase", "-i", starting_cmt, env={"GIT_SEQUENCE_EDITOR": f"{sys.executable} {helper_path}"},allow_fail=True)
+    fst=True
+    while in_rebase(git):
+        _subupdate(module_path, fst)
+        fst=False
+
+def subours(module_path, git=git):
+    #check if conflict
+    #check if module
+    res = git("diff" ,"--", module_path)
+    m = re.match(r".*commit (\w+)$", res.split("\n")[-4])
+    if not m:
+        raise Exception(f"match: {res}")
+    commit = m.group(1)
+    return commit
+
+def subhead(module_path, git=git):
+    #check if conflict
+    #check if module
+    res = git("diff" ,"--", module_path)
+    m = re.match(r".*commit (\w+)$", res.split("\n")[-2])
+    if not m:
+        raise Exception(f"match: {res}")
+    commit = m.group(1)
+    return commit
+
+def subtheirs(module_path, git=git):
+    res = git("diff" ,"--", module_path)
+    m = re.match(r".*commit (\w+)$", res.split("\n")[-3])
+    if not m:
+        raise Exception(f"match: {res}")
+    commit = m.group(1)
+    return commit
 
 def sublog(git=git):
     # submit fetch
@@ -265,10 +336,17 @@ cmd_dict = {
     "subchange": lambda module_path, module_ref: subchange(module_path, module_ref, git=git),
     "subsha": lambda module_path: print(subsha(module_path, git=git)),
     "submsg": lambda module_path: print(submsg(module_path, git=git)),
-    "subfiles": lambda : subfiles(git=git)
+    "subfiles": lambda : subfiles(git=git),
+    "cmtbymsg" : lambda msg: print(get_commit_by_msg(msg, "HEAD", git=git)),
+    "subhead": lambda module_path: print(subhead(module_path,git=git)),
+    "subours": lambda module_path: print(subours(module_path,git=git)),
+    "subtheirs": lambda module_path: print(subtheirs(module_path,git=git)),
+    "subupdate": lambda module_path, starting_cmt: subupdate(module_path,starting_cmt, git=git)
 }
 
 def usage():
+    for i in executed_git_cmds:
+        print(" ".join(i))
     raise Exception("Usage: git", f"({'|'.join(cmd_dict.keys())})", sys.argv)
 
 
