@@ -96,6 +96,12 @@ def submodule_down_top(func, git=git, lvl=0):
         submodule_down_top(func, git=git_C(path,git=git), lvl=lvl+1)
     func(git,lvl)
 
+def submodule_top_down(func, git=git, lvl=0):
+    func(git,lvl)
+    for submod in submodules(git):
+        path,_ = submod
+        submodule_top_down(func, git=git_C(path,git=git), lvl=lvl+1)
+
 def _git_fetch(git_path):
     git_fetch(git_factory(git_path))
 
@@ -128,7 +134,7 @@ def sublog(git=git):
     main_branches = dict(fut.result() for fut in as_completed(futures_main_branch))
 
     # recursive log
-    def _sublog(git=git):
+    def _sublog(git, lvl):
         buffer = io.StringIO()
         sys.stdout = buffer
         diff_size = print_changes_bothsides("origin/"+ main_branches[git.path],"HEAD", git=git, color_subrefs=True)
@@ -136,10 +142,7 @@ def sublog(git=git):
         if diff_size > 0:
             cprint(remote_repo_name(git=git).center(65,"-"),fg_color="yellow")
             print(buffer.getvalue(), end="")
-            for submod in submodules(git):
-                path,_ = submod
-                _sublog(git=git_C(path, git=git))
-    _sublog(git=git)
+    submodule_top_down(_sublog, git=git)
 
 def subfiles(git=git):
     files = set()
