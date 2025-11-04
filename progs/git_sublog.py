@@ -49,7 +49,19 @@ def sublog(args, git=git):
         diff_size = print_changes_bothsides(fr, to, git=git, color_subrefs=True)
         sys.stdout = sys.__stdout__
         if diff_size > 0:
-            cprint(remote_repo_name(git=git).center(65,"-"),fg_color="yellow")
+            match args.repo_label:
+                case "remote":
+                    repo_label = remote_repo_name(git=git)
+                case "relpath":
+                    repo_label = Path(git.path).resolve().relative_to(Path("..").resolve())
+                case "abspath":
+                    repo_label = Path(git.path).resolve()
+                case "dirname":
+                    repo_label = Path(git.path).resolve().name
+                case _:
+                    raise Exception("invalid `repo_label`")
+            repo_label = str(repo_label)
+            cprint(repo_label.center(65,"-"),fg_color="yellow")
             print(buffer.getvalue(), end="")
         elif args.stop_unchanged:
             return False
@@ -91,6 +103,12 @@ def parse_arguments():
 
     parser.set_defaults(stop_unchanged=True)
 
+    parser.add_argument(
+        "--repo-label",
+        choices=["remote", "relpath", "abspath", "dirname"],
+        default="dirname",
+        help="Adjust how you see the repo label"
+    )
 
     parser.add_argument("fr", nargs="?", default=ORIGINMASTER,help="Chose to comparison: theirs/from (optional)")
     parser.add_argument("to", nargs="?", default="HEAD", help="Chose to comparison: ours/to (optional)")
