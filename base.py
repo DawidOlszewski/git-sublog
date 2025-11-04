@@ -100,10 +100,10 @@ def submodule_down_top(func, git=git, lvl=0):
     func(git,lvl)
 
 def submodule_top_down(func, git=git, lvl=0):
-    func(git,lvl)
-    for submod in submodules(git):
-        path,_ = submod
-        submodule_top_down(func, git=git_C(path,git=git), lvl=lvl+1)
+    if func(git,lvl) == False:
+        for submod in submodules(git):
+            path,_ = submod
+            submodule_top_down(func, git=git_C(path,git=git), lvl=lvl+1)
 
 def _git_fetch(git_path):
     git_fetch(git_factory(git_path))
@@ -179,41 +179,7 @@ def subtheirs(module_path, git=git):
     commit = m.group(1)
     return commit
 
-def sublog(git=git):
-    # submit fetch
-    futures_fetch = set()
-    with ProcessPoolExecutor() as ex:
-        def add_future_fetch(git, lvl):
-            nonlocal futures_fetch
-            futures_fetch.add(ex.submit(_git_fetch,git.path))
-        submodule_down_top(add_future_fetch, git=git)
 
-    # submit main branch
-    futures_main_branch = set()
-    with ProcessPoolExecutor() as ex:
-        def add_future_main_branch(git, lvl):
-            nonlocal futures_main_branch
-            fut = ex.submit(_main_branch,git.path)
-            futures_main_branch.add(fut)
-        submodule_down_top(add_future_main_branch, git=git)
-
-    # wait for completion of all submissions
-    # 'wait' is not an alternative, because it doesn't throw errors 
-    for fut in as_completed(futures_fetch):
-        _ = fut.result()
-    
-    main_branches = dict(fut.result() for fut in as_completed(futures_main_branch))
-
-    # recursive log
-    def _sublog(git, lvl):
-        buffer = io.StringIO()
-        sys.stdout = buffer
-        diff_size = print_changes_bothsides("origin/"+ main_branches[git.path],"HEAD", git=git, color_subrefs=True)
-        sys.stdout = sys.__stdout__
-        if diff_size > 0:
-            cprint(remote_repo_name(git=git).center(65,"-"),fg_color="yellow")
-            print(buffer.getvalue(), end="")
-    submodule_top_down(_sublog, git=git)
 
 def subfiles(git=git):
     files = set()
