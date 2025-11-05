@@ -58,7 +58,7 @@ def git_factory(path="."):
             environ.update(env)
         p = run(arr,capture_output=True, text=True, env=environ)
         if p.returncode != 0 and not allow_fail:
-            raise Exception("return code != 0")
+            raise Exception("return code != 0", arr, git.path)
         return p.stdout
     git.path = path
     return git
