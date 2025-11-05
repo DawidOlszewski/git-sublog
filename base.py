@@ -100,7 +100,7 @@ def submodule_down_top(func, git=git, lvl=0):
     func(git,lvl)
 
 def submodule_top_down(func, git=git, lvl=0):
-    if func(git,lvl) == False:
+    if func(git,lvl) != False:
         for submod in submodules(git):
             path,_ = submod
             submodule_top_down(func, git=git_C(path,git=git), lvl=lvl+1)
