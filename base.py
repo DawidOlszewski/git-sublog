@@ -75,7 +75,7 @@ def curr_branch(git=git):
     return b
 
 def git_fetch(git=git):
-    git("fetch")
+    git("fetch", allow_fail=True)
 
 def remote_repo(git=git):
     r = git("remote", "-v").split("\n")[0].split("\t")[1].split(" ")[0]
@@ -85,12 +85,20 @@ def remote_repo_name(git=git):
     r = remote_repo(git=git)
     return r.split(":")[1].split(".")[0]
 
-def submodules(git=git):
+#order of args
+def submodules(git=git, commit=None):
     submods = []
-    for i, submodule_line in enumerate(git("submodule", "status").split("\n")[:-1]):
-        submodule_raw = submodule_line.strip().split(" ")
-        submodule =  [submodule_raw[1], submodule_raw[0]]
-        submods.append(submodule)
+    if commit is not None:
+        git_read_tree(commit, git)
+        for i, submodule_line in enumerate(git("submodule", "status", "--cached").split("\n")[:-1]):
+            submodule_raw = submodule_line.strip().split(" ")
+            submodule =  [submodule_raw[1], submodule_raw[0]]
+            submods.append(submodule)
+    else: 
+        for i, submodule_line in enumerate(git("submodule", "status").split("\n")[:-1]):
+            submodule_raw = submodule_line.strip().split(" ")
+            submodule =  [submodule_raw[1], submodule_raw[0]]
+            submods.append(submodule)
     return submods
     
 def submodule_down_top(func, git=git, lvl=0):
@@ -115,14 +123,85 @@ def get_commit_by_msg(msg, descendant, git=git):
     res = git("log", descendant,  f"--grep=^{msg}$", '--pretty=%H')
     return res.split('\n')[0]
 
-def sublog(git=git):
-    # submit fetch
-    futures_fetch = set()
-    with ProcessPoolExecutor() as ex:
-        def add_future_fetch(git, lvl):
-            nonlocal futures_fetch
-            futures_fetch.add(ex.submit(_git_fetch,git.path))
-        submodule_down_top(add_future_fetch, git=git)
+def git_read_tree(cmt, git):
+    git("read-tree", cmt)
+
+def git_write_tree(git):
+    res = git("write-tree")
+    return res.split("\n")[0]
+
+def get_msg_of_cmt(cmt, git):
+    res = git("show", "--quiet", "--format=%s", cmt)
+    return res[:-1]
+
+def git_commit_tree(tree, msg, parent, git):
+    res = git("commit-tree", tree, "-m", msg, "-p", parent)
+    return res.split("\n")[0]
+
+def get_parent_cmt(sha, git):
+    res = git("rev-parse", sha + "^")
+    return res.split("\n")[0]
+
+def git_checkout(ref, git):
+    git("checkout", ref)
+
+def _subupdate_execute(state_list: list[tuple[str, dict]], git=git):
+    parent = get_parent_cmt(state_list[0][0], git)
+    prev = parent
+    for cmt, submodule_dict in state_list:
+        git_read_tree(cmt, git)
+        for submodule, sha in submodule_dict.items():
+            subchange(submodule, sha, git)
+        new_tree_hash = git_write_tree(git)
+        prev = git_commit_tree(new_tree_hash, get_msg_of_cmt(cmt, git), prev, git)
+    return prev
+
+def _subupdate_get_change_list(cmts, git):
+    # take commits -> cmts
+    # returns new state of submodules as a list [(sha, {submodule->new_sha})] 
+    change_list = []
+    for cmt in cmts:
+        changed = changed_submodules(cmt, git)
+        change_list.append((cmt, changed))
+    return change_list
+
+def _subupdate_get_state_list(change_list, git):
+    # if len(cmts) # do sth
+    parent_cmt = get_parent_cmt(change_list[0][0], git)
+    submodule_state = dict(submodules(git,parent_cmt))
+    state_list = []
+    for sha, change_entry in change_list:
+        submodule_state = {**submodule_state, **change_entry}
+        state_list.append((sha, submodule_state))
+    return state_list
+
+def _subupdate_update_changed_list(changed_list, git):
+    updated_changed_list = []
+    for cmt, changed_submodules in changed_list:
+        updated_state = {}
+        for submodule, sha in changed_submodules.items():
+            updated_sha = get_commit_by_msg(get_msg_of_cmt(sha, git_C(submodule,git)), "HEAD", git_C(submodule,git))
+            updated_state[submodule] = updated_sha
+        updated_changed_list.append((cmt, updated_state))
+    return updated_changed_list
+
+def get_cmt_range(fr, to, git):
+    res = git("log", "--pretty=%H", "--reverse", f"{fr}..{to}")
+    return res.split("\n")[:-1]
+
+def _subupdate_rec(git,lvl):
+    cmts = get_cmt_range("main", "HEAD", git) #main/master
+    change_list = _subupdate_get_change_list(cmts, git)
+    if all(len(change[1]) == 0 for change in change_list):
+        print("leaving as it is:", git.path)
+        return 
+    updated_change_list = _subupdate_update_changed_list(change_list, git)
+    state_list = _subupdate_get_state_list(updated_change_list, git)
+    new_ref = _subupdate_execute(state_list)
+    git_checkout(new_ref, git)
+
+def subupdate(git=git):
+    submodule_down_top(_subupdate_rec, git)
 
 def subfiles(git=git):
     files = set()
@@ -218,6 +297,17 @@ def print_changes(f,t, color="green", git=git, color_subrefs=False):
                 cprint(sub_t_sha, fg_color=sub_t_color)
     return commit_amount
 
+def changed_submodules(cmt, git=git):
+    res = git("log", cmt, "-1", "--raw", "--pretty=")
+    changed_submods = {}
+    for line in res.split("\n")[:-1]:
+        hline = raw_line(line)
+        if hline["type"] == Mode.Submodule.name:
+            sub_path = hline["path"]
+            sub_t_sha = hline['t'][:COMMIT_SHORT]
+            changed_submods[sub_path] = sub_t_sha
+    return changed_submods
+
 def rev_parse(module_ref, git=git):
     return git("rev-parse", module_ref).strip()
 
@@ -245,7 +335,8 @@ cmd_dict = {
     "subchange": lambda module_path, module_ref: subchange(module_path, module_ref, git=git),
     "subsha": lambda module_path: print(subsha(module_path, git=git)),
     "submsg": lambda module_path: print(submsg(module_path, git=git)),
-    "subfiles": lambda : subfiles(git=git)
+    "subfiles": lambda : subfiles(git=git),
+    "subupdate": lambda : subupdate(git=git)
 }
 
 def usage():
