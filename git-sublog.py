@@ -276,6 +276,8 @@ cmd_dict = {
 }
 
 def usage():
+    for i in executed_git_cmds:
+        print(" ".join(i))
     raise Exception("Usage: git", f"({'|'.join(cmd_dict.keys())})", sys.argv)
 
 
