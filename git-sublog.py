@@ -111,6 +111,10 @@ def _git_fetch(git_path):
 def _main_branch(git_path):
     return [git_path, main_branch(git=git_factory(git_path))]
 
+def get_commit_by_msg(msg, descendant, git=git):
+    res = git("log", descendant,  f"--grep=^{msg}$", '--pretty=%H')
+    return res.split('\n')[0]
+
 def sublog(git=git):
     # submit fetch
     futures_fetch = set()
