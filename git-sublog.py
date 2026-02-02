@@ -50,11 +50,14 @@ def cprint(*args, fg_color="default", bg_color="default", **kwargs):
     print(reset, end="")
 
 def git_factory(path="."):
-    def git(*args):
+    def git(*args, env=None, allow_fail=False):
         arr = ["git", "-C", git.path, *args]
         executed_git_cmds.append(arr)
-        p = run(arr,capture_output=True, text=True)
-        if p.returncode != 0:
+        environ = os.environ.copy()
+        if env:
+            environ.update(env)
+        p = run(arr,capture_output=True, text=True, env=environ)
+        if p.returncode != 0 and not allow_fail:
             raise Exception("return code != 0")
         return p.stdout
     git.path = path
