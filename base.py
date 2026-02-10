@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 
+from dataclasses import dataclass
 from subprocess import run, DEVNULL
 import os
 import re
 from  enum import StrEnum
 import io
 import sys
+from typing import Iterator, List, NoReturn, Optional, Set, Tuple, cast
+from collections import namedtuple
 
-from  concurrent.futures import ALL_COMPLETED, ProcessPoolExecutor, as_completed 
+Ref = str
 
 COMMIT_SHORT=8
 
@@ -49,7 +52,19 @@ def cprint(*args, fg_color="default", bg_color="default", **kwargs):
     print(*args, **kwargs)
     print(reset, end="")
 
-def git_factory(path="."):
+# its the main reason of delay
+def main_branch(git):
+    # Below approach doesn't always work
+    # try:
+    #     r = git("symbolic-ref", f"refs/remotes/{git.remote}/HEAD")
+    #     return r.split("/")[-1][:-1]
+    # except:
+    #     r = git("ls-remote","--symref",git.remote,"HEAD")
+    #     return r.split("\n")[0].split("/")[-1].split("\t")[0]
+    #FIXME: for git_factory
+    return "main"
+
+def git_factory(path=".", current=None, baseline=None, target=None, parent_current_ptr=None, parent_target_ptr=None):
     def git(*args, env=None, allow_fail=False):
         arr = ["git", "-C", git.path, *args]
         executed_git_cmds.append(arr)
@@ -58,15 +73,58 @@ def git_factory(path="."):
             environ.update(env)
         p = run(arr,capture_output=True, text=True, env=environ)
         if p.returncode != 0 and not allow_fail:
-            raise Exception("return code != 0", arr, git.path)
+            raise Exception("return code != 0", executed_git_cmds, git.path)
         return p.stdout
+    
     git.path = path
+    
+    def parse_config_file(path) -> Tuple[Optional[Ref], Optional[Ref], Optional[Ref], Optional[Ref]]:
+        config_current, config_baseline, config_target, config_remote = None, None, None, None
+        try:
+            with open(path + "/.sublog") as conf:
+                for l in conf:
+                    if (m:= re.match(r"^current=(?P<current>\w+)$", l, re.IGNORECASE)) is not None:
+                        config_current = cast(str,m.group("current"))
+                    elif (m:= re.match(r"^baseline=(?P<baseline>\w+)$", l, re.IGNORECASE)) is not None:
+                        config_baseline = cast(str, m.group("baseline"))
+                    elif (m:= re.match(r"^target=(?P<target>\w+)$", l, re.IGNORECASE)) is not None:
+                        config_target = cast(str, m.group("target"))
+                    elif (m:= re.match(r"^remote=(?P<remote>\w+)$", l, re.IGNORECASE)) is not None:
+                        config_remote = cast(str, m.group("remote"))
+
+        except OSError:
+            pass
+        return config_current, config_baseline, config_target, config_remote
+
+    config_current, config_baseline, config_target, config_remote = parse_config_file(path=path)
+    current = current or config_current or "HEAD"
+    try:
+        baseline = baseline or config_baseline or main_branch(git)
+    except Exception as e:
+        e.add_note(f"Baseline ref in config file and main branch in repo are not set, so baseline branch is not chosen")
+        raise
+    remote = config_remote or "origin"
+    target = target or \
+            config_target or \
+            f"{remote}/{baseline}"
+    
+    git.current = current
+    git.baseline = baseline
+    git.target = target
+    
+    git.remote = remote
+
+    git.parent_current_ptr = parent_current_ptr
+    git.parent_target_ptr = parent_target_ptr
     return git
+
+# TODO:verify_commit
+#git rev-parse --verify <commit-sha>^{commit}
 
 git = git_factory()
     
-def git_C(path, git=git):
-    return git_factory(git.path + "/" + path)
+def git_C(path, current=None, baseline=None, target=None, parent_target_ptr=None, parent_current_ptr=None, git=git):
+    return git_factory(git.path + "/" + path, current=current, baseline=baseline, target=target, parent_target_ptr=parent_target_ptr, parent_current_ptr=parent_current_ptr)
 
 def curr_branch(git=git):
     b = git("branch", "--show-current").strip()
@@ -119,7 +177,7 @@ def _git_fetch(git_path):
 def _main_branch(git_path):
     return [git_path, main_branch(git=git_factory(git_path))]
 
-def get_commit_by_msg(msg, descendant, git=git):
+def get_cmt_by_msg(msg, descendant, git=git):
     res = git("log", descendant,  f"--grep=^{msg}$", '--pretty=%H')
     return res.split('\n')[0]
 
@@ -180,7 +238,8 @@ def _subupdate_update_changed_list(changed_list, git):
     for cmt, changed_submodules in changed_list:
         updated_state = {}
         for submodule, sha in changed_submodules.items():
-            updated_sha = get_commit_by_msg(get_msg_of_cmt(sha, git_C(submodule,git)), "HEAD", git_C(submodule,git))
+            git_sub = git_C(submodule, git=git)
+            updated_sha = get_cmt_by_msg(get_msg_of_cmt(sha, git_sub), git_sub.current, git_sub)
             updated_state[submodule] = updated_sha
         updated_changed_list.append((cmt, updated_state))
     return updated_changed_list
@@ -189,8 +248,12 @@ def get_cmt_range(fr, to, git):
     res = git("log", "--pretty=%H", "--reverse", f"{fr}..{to}")
     return res.split("\n")[:-1]
 
-def _subupdate_rec(git,lvl):
-    cmts = get_cmt_range("main", "HEAD", git) #main/master
+def get_lca(ref1, ref2, git=git):
+    res = git("merge-base", ref1, ref2)
+    return res[:-1]
+
+def _subupdate_rec(git, lvl):
+    cmts = get_cmt_range(git.baseline, git.current, git)
     change_list = _subupdate_get_change_list(cmts, git)
     if all(len(change[1]) == 0 for change in change_list):
         print("leaving as it is:", git.path)
@@ -203,11 +266,12 @@ def _subupdate_rec(git,lvl):
 def subupdate(git=git):
     submodule_down_top(_subupdate_rec, git)
 
+#origin
 def subfiles(git=git):
     files = set()
-    def callback(git,lvl):
+    def callback(git, lvl):
         nonlocal files 
-        files = files.union(get_files("origin/" + main_branch(git), "HEAD", git))
+        files = files.union(get_files(git.baseline, git.current, git))
     submodule_down_top(callback, git=git)
     print(*files, sep="\n")
 
@@ -239,63 +303,112 @@ def raw_line(line: str):
         msg = m.group(2)
         return {"type": Mode.Commit.name, "sha": sha, "msg": msg}
 
-def print_changes_bothsides(f,t , git=git, color_subrefs=False):
-    commit_amount = 0
-    commit_amount += print_changes(f,t, color="green",git=git,color_subrefs=color_subrefs)
-    commit_amount += print_changes(t, f, color="red",git=git, color_subrefs=color_subrefs)
-    return commit_amount
+def print_changes_bothsides(current: Ref, baseline: Ref, target: Ref, parent_current_ref: Optional[Ref] = None, parent_target_ref: Optional[Ref] = None, git=git) -> int:
+    current_changes = get_submodule_changes(baseline, current , git=git)
+    target_changes = get_submodule_changes(baseline, target, git=git)
+    
+    current_changes_mark = [False] * len(current_changes)
+    mark = False
+    for i in reversed(range(len(current_changes_mark))):
+        mark = mark or current_changes[i].sha == parent_current_ref
+        current_changes_mark[i] = mark
+    current_changes_marked = list(
+        cast(Iterator[Tuple[bool, SubmoduleChange]],
+        zip(current_changes_mark, current_changes))
+        )
 
-# its the main reason of delay
-def main_branch(git=git):
-    # Below approach doesn't always work
-    try:
-        r = git("symbolic-ref", "refs/remotes/origin/HEAD") # refs/remotes/origin/(master|main)
-        return r.split("/")[-1][:-1]
-    except:
-        r = git("ls-remote","--symref","origin","HEAD")
-        return r.split("\n")[0].split("/")[-1].split("\t")[0]
+    target_changes_mark = [False] * len(target_changes)
+    mark = False
+    for i in reversed(range(len(target_changes_mark))):
+        mark = mark or target_changes[i].sha == parent_target_ref
+        target_changes_mark[i] = mark
+    target_changes_marked = list(
+                                    cast(Iterator[Tuple[bool, SubmoduleChange]], 
+                                 zip(target_changes_mark, target_changes, strict = True))
+    )
+
+    first_diverged_index = 0
+    for i in range(min(len(current_changes), len(target_changes))):
+        if current_changes[i].sha != target_changes[i].sha:
+            first_diverged_index = i
+            break
+
+    only_current_changes = current_changes_marked[first_diverged_index:]
+    only_target_changes = target_changes_marked[first_diverged_index:]
+    only_common_changes = current_changes_marked[:first_diverged_index]
+
+    def _print_change_range(changes: list[Tuple[bool, SubmoduleChange]], fg: str):
+        for marked, change in changes:
+            bg = "blue" if marked else "default"
+            print_submodule_change(change, fg = fg, bg = bg)
+
+    _print_change_range(only_current_changes, "green")
+    _print_change_range(only_common_changes, "magenta")
+    _print_change_range(only_target_changes, "red")
+    if only_target_changes:
+        # its written twice on purpose
+        _print_change_range(only_common_changes, "magenta")
+
+    return len(current_changes + target_changes)
 
 
-def print_curr_changes(git=git):
-    return print_changes_bothsides("origin/"+ main_branch(git=git),"HEAD", git=git, color_subrefs=True)
+@dataclass
+class SubmoduleChange:
+    sha: Ref
+    msg: str
+    changed_submodules: list[Tuple[str, Tuple[Ref, str], Tuple[Ref, str]]]
 
-def get_files(f, t, git=git):
-    res = git("log", f"{f}..{t}", "--raw", "--pretty=oneline")
-    files = set()
-    for line in res.split("\n")[:-1]:
-        hline = raw_line(line)
-        if hline["type"] == Mode.File.name:
-            files.add(git.path + "/" + hline["path"])
+def print_submodule_change(submodule_change: SubmoduleChange, fg: str, bg: str):
+    cprint(submodule_change.sha, submodule_change.msg, fg_color=fg)
+    for changed_submodule in submodule_change.changed_submodules:
+        cprint(changed_submodule[0], fg_color="yellow", end=" ")
+        f_sub_sha, f_sub_color = changed_submodule[1]
+        cprint(f_sub_sha, fg_color=f_sub_color, end="")
+        print(" -> ", end="")
+        t_sub_sha, t_sub_color = changed_submodule[2]
+        cprint(t_sub_sha, fg_color=t_sub_color)
+
+
+
+# def print_curr_changes(git=git):
+#     return print_changes_bothsides(git.current, , git=git, color_subrefs=True)
+
+
+def get_files(f: Ref, t: Ref, which="modified",git=git) -> Set[str]:
+    modified_args = ["--diff-filter=ARM"] if which == "modified" else []
+    res = git("diff", f"{f}..{t}", "--name-only", *modified_args)
+    files = set(res[:-1].split("\n"))
     return files
 
-def print_changes(f,t, color="green", git=git, color_subrefs=False):
-    fst = True
+def get_submodule_changes(f: Ref, t: Ref, git=git):
     res = git("log", f"{f}..{t}", "--raw", "--pretty=oneline")
-    commit_amount = 0
+    submodule_changes: list[SubmoduleChange] = []
+    last_cmt: Optional[SubmoduleChange] = None # invariant: first line of raw-log is about commit
+    git_sub = None
     for line in res.split("\n")[:-1]:
         hline = raw_line(line)
         if hline["type"] == Mode.Commit.name:
-            commit_amount += 1
-            if fst:
-                fst = False
-            else:
-                pass
-            cprint(hline["sha"][:COMMIT_SHORT] ,hline["msg"], fg_color=color)
+            if last_cmt is not None:
+                submodule_changes.append(last_cmt)
+            last_cmt = SubmoduleChange(hline["sha"][:COMMIT_SHORT], hline["msg"], [])
         if hline["type"] == Mode.Submodule.name:
+            sub_path: str = hline["path"]
+            assert isinstance(sub_path, str)
             sub_f_sha = hline['f'][:COMMIT_SHORT]
-            sub_t_sha = hline['t'][:COMMIT_SHORT]
-            if not color_subrefs:
-                cprint(hline["path"], f"{sub_f_sha} -> {sub_t_sha}")
-            else:
-                cprint(hline["path"], end=" ")
-                try: sub_f_color = "cyan" if is_ancestor(sub_f_sha, "HEAD", git_C(hline["path"],git)) else "magenta"
-                except: sub_f_color = "red"
-                cprint(sub_f_sha, fg_color=sub_f_color, end="")
-                print(" -> ",end="")
-                try: sub_t_color = "cyan" if is_ancestor(sub_t_sha, "HEAD", git_C(hline["path"],git)) else "magenta"
-                except: sub_t_color = "red"
-                cprint(sub_t_sha, fg_color=sub_t_color)
-    return commit_amount
+            assert isinstance(sub_f_sha, str)
+            sub_t_sha: str = hline['t'][:COMMIT_SHORT]
+            assert isinstance(sub_t_sha, str)
+            git_sub = git_C(hline["path"], git=git)
+            try: sub_f_color = "cyan" if is_ancestor(sub_f_sha, git_sub.current, git_sub) else "magenta"
+            except: sub_f_color = "red"
+            try: sub_t_color = "cyan" if is_ancestor(sub_t_sha, git_sub.current, git_sub) else "magenta"
+            except: sub_t_color = "red"
+            assert last_cmt is not None
+            last_cmt.changed_submodules.append(
+                (sub_path, \
+                (sub_f_sha, sub_f_color), \
+                (sub_t_sha, sub_t_color)))
+    return submodule_changes
 
 def changed_submodules(cmt, git=git):
     res = git("log", cmt, "-1", "--raw", "--pretty=")
@@ -316,8 +429,8 @@ def subchange(module_path, module_ref, git=git):
     module_full_sha = rev_parse(module_ref, git_C(module_path, git=git))
     git("update-index", "--cacheinfo",  f"{Mode.Submodule.value},{module_full_sha},{module_path}")
 
-def subsha(module_path, git=git):
-    return git("ls-tree","HEAD", module_path).split("\t")[-2].split(" ")[-1]
+def subsha(ref, module_path, git=git):
+    return git("ls-tree", ref, module_path).split("\t")[-2].split(" ")[-1]
 
 def submsg(module_path, git=git):
     return  git_C(module_path,git=git)("log", subsha(module_path, git), "-1", "--pretty=%s").strip()
@@ -333,13 +446,13 @@ def is_ancestor(child_ref, parent_ref, git=git):
 cmd_dict = {
     "sublog": lambda : sublog(git=git),
     "subchange": lambda module_path, module_ref: subchange(module_path, module_ref, git=git),
-    "subsha": lambda module_path: print(subsha(module_path, git=git)),
+    "subsha": lambda module_path: print(subsha(git.current, module_path, git=git)),
     "submsg": lambda module_path: print(submsg(module_path, git=git)),
     "subfiles": lambda : subfiles(git=git),
     "subupdate": lambda : subupdate(git=git)
 }
 
-def usage():
+def usage() -> NoReturn:
     for i in executed_git_cmds:
         print(" ".join(i))
     raise Exception("Usage: git", f"({'|'.join(cmd_dict.keys())})", sys.argv)

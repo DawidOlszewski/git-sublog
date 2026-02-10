@@ -1,10 +1,10 @@
 # git sublog
 
 - important refs:
-  - starting
-  - HEAD-ref
-  - comparing
-
+  - baseline
+  - current
+  - target
+  
 assumption is that starting should be ancestor of bot HEAD and comparing
 
 - colors:

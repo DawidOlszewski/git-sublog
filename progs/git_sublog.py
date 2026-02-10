@@ -9,7 +9,7 @@ from pathlib import Path
 parent_dir = Path(__file__).resolve().parent.parent
 sys.path.append(str(parent_dir))
 
-from base import git,submodule_top_down,cprint,_git_fetch,print_changes_bothsides,remote_repo_name,_main_branch
+from base import git, main_branch,submodule_top_down,cprint,_git_fetch,print_changes_bothsides,remote_repo_name,_main_branch
 
 ORIGINMASTER = "o/m"
 
@@ -25,28 +25,28 @@ def sublog(args, git=git):
 
     # submit main branch
     futures_main_branch = set()
-    if args.fr == ORIGINMASTER:
-        with ProcessPoolExecutor() as ex:
-            def add_future_main_branch(git, lvl):
-                nonlocal futures_main_branch
-                fut = ex.submit(_main_branch,git.path)
-                futures_main_branch.add(fut)
+    if args.baseline == ORIGINMASTER:
+        # with ProcessPoolExecutor() as ex:
+        def add_future_main_branch(git, lvl):
+            nonlocal futures_main_branch
+            # fut = ex.submit(_main_branch,git.path)
+            # futures_main_branch.add(fut)
+            git.baseline = main_branch(git=git)
+            git.target = git.remote + "/" + git.baseline
             submodule_top_down(add_future_main_branch, git=git)
 
     # wait for completion of all submissions
     # 'wait' is not an alternative, because it doesn't throw errors 
-    for fut in as_completed(futures_fetch):
-        _ = fut.result()
+    # for fut in as_completed(futures_fetch):
+    #     _ = fut.result()
     
-    main_branches = dict(fut.result() for fut in as_completed(futures_main_branch))
+    # main_branches = dict(fut.result() for fut in as_completed(futures_main_branch))
 
     # recursive log
     def _sublog(git, lvl):
         buffer = io.StringIO()
         sys.stdout = buffer
-        fr = "origin/"+ main_branches[git.path] if args.fr == ORIGINMASTER else args.fr
-        to = args.to
-        diff_size = print_changes_bothsides(fr, to, git=git, color_subrefs=True)
+        diff_size = print_changes_bothsides(git.current, git.baseline, git.target, git=git)
         sys.stdout = sys.__stdout__
         if diff_size > 0:
             match args.repo_label:
@@ -110,8 +110,9 @@ def parse_arguments():
         help="Adjust how you see the repo label"
     )
 
-    parser.add_argument("fr", nargs="?", default=ORIGINMASTER,help="Chose to comparison: theirs/from (optional)")
-    parser.add_argument("to", nargs="?", default="HEAD", help="Chose to comparison: ours/to (optional)")
+    parser.add_argument("current", nargs="?")
+    parser.add_argument("baseline", nargs="?")
+    parser.add_argument("target", nargs="?")
 
     return parser.parse_args()
 
